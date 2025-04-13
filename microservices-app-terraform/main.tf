@@ -1,10 +1,10 @@
 provider "azurerm" {
   features {}
-  subscription_id = var.microservices_subscription_id
+  subscription_id = var.subscription_id
 }
 
 resource "azurerm_resource_group" "microservices_rg" {
-  name     = var.microservices_resource_group_name
+  name     = var.resource_group_name
   location = var.microservices_location
 }
 
@@ -25,22 +25,22 @@ resource "azurerm_container_app_environment" "microservices_env" {
 
 locals {
   services = {
-    users-api             = { port = 3000, image = "mag1305/users-api:latest" }
-    todos-api             = { port = 3001, image = "mag1305/todos-api:latest" }
-    log-message-processor = { port = 3002, image = "mag1305/log-message-processor:latest" }
-    auth-api              = { port = 3003, image = "mag1305/auth-api:latest" }
+    frontend              = { port = 80, image = "mag1305/frontend:latest" }
+    users-api             = { port = 8080, image = "mag1305/users-api:latest" }
+    todos-api             = { port = 8082, image = "mag1305/todos-api:latest" }
+    log-message-processor = { port = 6379, image = "mag1305/log-message-processor:latest" }
+    auth-api              = { port = 8000, image = "mag1305/auth-api:latest" }
     zipkin                = { port = 9411, image = "openzipkin/zipkin:latest" }
-    redis                 = { port = 6379, image = "redis:alpine" }
+    redis                 = { port = 6380, image = "redis:alpine" }
   }
 }
 
 resource "azurerm_container_app" "services" {
-  for_each                      = local.services
-  name                          = each.key
+  for_each                     = local.services
+  name                         = each.key
   container_app_environment_id = azurerm_container_app_environment.microservices_env.id
-  resource_group_name           = azurerm_resource_group.microservices_rg.name
-  location                      = azurerm_resource_group.microservices_rg.location
-  revision_mode                 = "Single"
+  resource_group_name          = azurerm_resource_group.microservices_rg.name
+  revision_mode                = "Single"
 
   template {
     container {
@@ -49,15 +49,70 @@ resource "azurerm_container_app" "services" {
       cpu    = 0.25
       memory = "0.5Gi"
 
-      ports {
-        port = each.value.port
+      env {
+        name  = "AUTH_API_PORT"
+        value = "8000"
       }
-    }
 
-    ingress {
-      external_enabled = true
-      target_port      = each.value.port
-      transport        = "auto"
+      env {
+        name  = "USERS_API_ADDRESS"
+        value = "http://users-api:8080"
+      }
+
+      env {
+        name = "JWT_SECRET"
+        value = "PRTF"
+      }
+
+      env {
+        name  = "ZIPKIN_URL"
+        value = "http://zipkin:9411/api/v2/spans"
+      }
+
+      env {
+        name  = "SERVER_PORT"
+        value = "8080"
+      }
+
+      env {
+        name  = "spring.zipkin.baseUrl"
+        value = "http://zipkin:9411"
+      }
+
+      env {
+        name  = "TODO_API_PORT"
+        value = "8082"
+      }
+
+      env {
+        name  = "REDIS_PORT"
+        value = "6380"
+      }
+
+      env {
+        name  = "REDIS_HOST"
+        value = "redis"
+      }
+
+      env {
+        name  = "REDIS_CHANNEL"
+        value = "log_channel"
+      }
+
+      env {
+        name  = "PORT"
+        value = "80"
+      }
+
+      env {
+        name  = "AUTH_API_ADDRESS"
+        value = "http://auth-api:8000"
+      }
+
+      env {
+        name  = "TODOS_API_ADDRESS"
+        value = "http://todos-api:8082"
+      }
     }
   }
 }
