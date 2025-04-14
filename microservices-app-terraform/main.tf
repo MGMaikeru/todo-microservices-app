@@ -314,6 +314,11 @@ resource "azurerm_container_app" "frontend" {
       }
 
       env {
+        name  = "USERS_API_ADDRESS"
+        value = "https://${azurerm_container_app.users_api.ingress[0].fqdn}"
+      }
+
+      env {
         name  = "ZIPKIN_URL"
         value = "https://${azurerm_container_app.zipkin.ingress[0].fqdn}"
       }
@@ -334,6 +339,7 @@ resource "azurerm_container_app" "frontend" {
     azurerm_container_app.zipkin,
     azurerm_container_app.auth_api,
     azurerm_container_app.todos_api,
+    azurerm_container_app.users_api,
   ]
 }
 
