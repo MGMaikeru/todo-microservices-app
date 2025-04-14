@@ -56,7 +56,7 @@ resource "azurerm_container_app" "services" {
 
       env {
         name  = "USERS_API_ADDRESS"
-        value = "http://users-api:8080"
+        value = "https://${azurerm_container_app.services["users-api"].ingress[0].fqdn}"
       }
 
       env {
@@ -66,7 +66,7 @@ resource "azurerm_container_app" "services" {
 
       env {
         name  = "ZIPKIN_URL"
-        value = "http://zipkin:9411/api/v2/spans"
+        value = "https://${azurerm_container_app.services["zipkin"].ingress[0].fqdn}"
       }
 
       env {
@@ -76,7 +76,7 @@ resource "azurerm_container_app" "services" {
 
       env {
         name  = "spring.zipkin.baseUrl"
-        value = "http://zipkin:9411"
+        value = "https://${azurerm_container_app.services["zipkin"].ingress[0].fqdn}"
       }
 
       env {
@@ -91,7 +91,7 @@ resource "azurerm_container_app" "services" {
 
       env {
         name  = "REDIS_HOST"
-        value = "redis"
+        value = "https://${azurerm_container_app.services["redis"].ingress[0].fqdn}"
       }
 
       env {
@@ -106,12 +106,12 @@ resource "azurerm_container_app" "services" {
 
       env {
         name  = "AUTH_API_ADDRESS"
-        value = "http://auth-api:8000"
+        value = "https://${azurerm_container_app.services["auth-api"].ingress[0].fqdn}"
       }
 
       env {
         name  = "TODOS_API_ADDRESS"
-        value = "http://todos-api:8082"
+        value = "https://${azurerm_container_app.services["todos-api"].ingress[0].fqdn}"
       }
     }
   }
