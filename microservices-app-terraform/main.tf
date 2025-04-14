@@ -115,4 +115,14 @@ resource "azurerm_container_app" "services" {
       }
     }
   }
+
+  ingress {
+    allow_insecure_connections = false
+    target_port               = each.value.port
+    external_enabled          = contains(["frontend", "zipkin"], each.key)
+    traffic_weight {
+      latest_revision = true
+      percentage     = 100
+    }
+  }
 }
