@@ -32,7 +32,7 @@ resource "azurerm_container_app" "zipkin" {
   template {
     container {
       name   = "zipkin"
-      image  = "openzipkin/zipkin:latest"
+      image  = "openzipkin/zipkin:2.23"
       cpu    = 0.25
       memory = "0.5Gi"
     }
@@ -67,7 +67,7 @@ resource "azurerm_container_app" "redis" {
   ingress {
     allow_insecure_connections = true
     target_port                = 6379
-    external_enabled           = false
+    external_enabled           = true
     traffic_weight {
       latest_revision = true
       percentage      = 100
@@ -77,7 +77,7 @@ resource "azurerm_container_app" "redis" {
   depends_on = [azurerm_container_app.zipkin]
 }
 
-resource "azurerm_container_app" "users_api" {
+resource "azurerm_container_app" "users-api" {
   name                         = "users-api"
   container_app_environment_id = azurerm_container_app_environment.microservices_env.id
   resource_group_name          = azurerm_resource_group.microservices_rg.name
@@ -92,7 +92,7 @@ resource "azurerm_container_app" "users_api" {
 
       env {
         name  = "spring.zipkin.baseUrl"
-        value = "http://zipkin:9411"
+        value = "http://zipkin"
       }
 
       env {
@@ -110,7 +110,7 @@ resource "azurerm_container_app" "users_api" {
   ingress {
     allow_insecure_connections = true
     target_port                = 8080
-    external_enabled           = false
+    external_enabled           = true
     traffic_weight {
       latest_revision = true
       percentage      = 100
@@ -122,7 +122,7 @@ resource "azurerm_container_app" "users_api" {
   ]
 }
 
-resource "azurerm_container_app" "auth_api" {
+resource "azurerm_container_app" "auth-api" {
   name                         = "auth-api"
   container_app_environment_id = azurerm_container_app_environment.microservices_env.id
   resource_group_name          = azurerm_resource_group.microservices_rg.name
@@ -137,7 +137,7 @@ resource "azurerm_container_app" "auth_api" {
 
       env {
         name  = "ZIPKIN_URL"
-        value = "https://zipkin:9411/api/v2/spans"
+        value = "http://zipkin/api/v2/spans"
       }
 
       env {
@@ -152,7 +152,7 @@ resource "azurerm_container_app" "auth_api" {
       
       env {
         name  = "USERS_API_ADDRESS"
-        value = "http://users-api:8080"
+        value = "http://users-api"
       }
 
       env {
@@ -174,11 +174,11 @@ resource "azurerm_container_app" "auth_api" {
 
   depends_on = [
     azurerm_container_app.zipkin,
-    azurerm_container_app.users_api,
+    azurerm_container_app.users-api,
   ]
 }
 
-resource "azurerm_container_app" "todos_api" {
+resource "azurerm_container_app" "todos-api" {
   name                         = "todos-api"
   container_app_environment_id = azurerm_container_app_environment.microservices_env.id
   resource_group_name          = azurerm_resource_group.microservices_rg.name
@@ -193,7 +193,7 @@ resource "azurerm_container_app" "todos_api" {
 
       env {
         name  = "ZIPKIN_URL"
-        value = "http://zipkin:9411/api/v2/spans"
+        value = "http://zipkin/api/v2/spans"
       }
 
       env {
@@ -226,7 +226,7 @@ resource "azurerm_container_app" "todos_api" {
   ingress {
     allow_insecure_connections = true
     target_port                = 8082
-    external_enabled           = false
+    external_enabled           = true
     traffic_weight {
       latest_revision = true
       percentage      = 100
@@ -254,7 +254,7 @@ resource "azurerm_container_app" "log_message_processor" {
 
       env {
         name  = "ZIPKIN_URL"
-        value = "http://zipkin:9411/api/v2/spans"
+        value = "http://zipkin/api/v2/spans"
       }
 
       env {
@@ -276,7 +276,7 @@ resource "azurerm_container_app" "log_message_processor" {
 
   ingress {
     allow_insecure_connections = false
-    target_port                = 6379
+    target_port                = 6380
     external_enabled           = false
     traffic_weight {
       latest_revision = true
@@ -310,28 +310,28 @@ resource "azurerm_container_app" "frontend" {
 
       env {
         name  = "AUTH_API_ADDRESS"
-        value = "http://auth-api:8000"
+        value = "http://auth-api"
       }
 
       env {
         name  = "TODOS_API_ADDRESS"
-        value = "http://todos-api:8082"
+        value = "http://todos-api"
       }
 
       env {
         name  = "USERS_API_ADDRESS"
-        value = "http://users-api:8080" 
+        value = "http://users-api" 
       }
 
       env {
         name  = "ZIPKIN_URL"
-        value = "http://zipkin:9411"
+        value = "http://zipkin/api/v2/spans"
       }
     }
   }
 
   ingress {
-    allow_insecure_connections = false
+    allow_insecure_connections = true
     target_port                = 80
     external_enabled           = true
     traffic_weight {
@@ -342,9 +342,9 @@ resource "azurerm_container_app" "frontend" {
 
   depends_on = [
     azurerm_container_app.zipkin,
-    azurerm_container_app.auth_api,
-    azurerm_container_app.todos_api,
-    azurerm_container_app.users_api,
+    azurerm_container_app.auth-api,
+    azurerm_container_app.todos-api,
+    azurerm_container_app.users-api,
   ]
 }
 
