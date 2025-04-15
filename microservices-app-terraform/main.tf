@@ -39,7 +39,7 @@ resource "azurerm_container_app" "zipkin" {
   }
 
   ingress {
-    allow_insecure_connections = false
+    allow_insecure_connections = true
     target_port                = 9411
     external_enabled           = true
     traffic_weight {
@@ -65,9 +65,9 @@ resource "azurerm_container_app" "redis" {
   }
 
   ingress {
-    allow_insecure_connections = false
-    target_port                = 6380
-    external_enabled           = true
+    allow_insecure_connections = true
+    target_port                = 6379
+    external_enabled           = false
     traffic_weight {
       latest_revision = true
       percentage      = 100
@@ -92,7 +92,7 @@ resource "azurerm_container_app" "users_api" {
 
       env {
         name  = "spring.zipkin.baseUrl"
-        value = "https://${azurerm_container_app.zipkin.ingress[0].fqdn}"
+        value = "http://zipkin:9411"
       }
 
       env {
@@ -102,14 +102,14 @@ resource "azurerm_container_app" "users_api" {
 
       env {
         name = "SERVER_PORT"
-        value = "8000"
+        value = "8080"
       }
     }
   }
 
   ingress {
-    allow_insecure_connections = false
-    target_port                = 8000
+    allow_insecure_connections = true
+    target_port                = 8080
     external_enabled           = false
     traffic_weight {
       latest_revision = true
@@ -137,12 +137,12 @@ resource "azurerm_container_app" "auth_api" {
 
       env {
         name  = "ZIPKIN_URL"
-        value = "https://${azurerm_container_app.zipkin.ingress[0].fqdn}"
+        value = "https://zipkin:9411/api/v2/spans"
       }
 
       env {
         name  = "AUTH_API_PORT"
-        value = "8080"
+        value = "8000"
       }
 
       env {
@@ -152,15 +152,20 @@ resource "azurerm_container_app" "auth_api" {
       
       env {
         name  = "USERS_API_ADDRESS"
-        value = "https://${azurerm_container_app.users_api.ingress[0].fqdn}"
+        value = "http://users-api:8080"
+      }
+
+      env {
+        name  = "CORS_ALLOWED_ORIGINS"
+        value = "*"
       }
     }
   }
 
   ingress {
-    allow_insecure_connections = false
-    target_port                = 8080
-    external_enabled           = false
+    allow_insecure_connections = true
+    target_port                = 8000
+    external_enabled           = true
     traffic_weight {
       latest_revision = true
       percentage      = 100
@@ -188,7 +193,7 @@ resource "azurerm_container_app" "todos_api" {
 
       env {
         name  = "ZIPKIN_URL"
-        value = "https://${azurerm_container_app.zipkin.ingress[0].fqdn}"
+        value = "http://zipkin:9411/api/v2/spans"
       }
 
       env {
@@ -203,12 +208,12 @@ resource "azurerm_container_app" "todos_api" {
 
       env {
         name  = "REDIS_PORT"
-        value = "6380"
+        value = "6379"
       }
 
       env {
         name  = "REDIS_HOST"
-        value = "https://${azurerm_container_app.redis.ingress[0].fqdn}"
+        value = "redis"
       }
 
       env {
@@ -219,7 +224,7 @@ resource "azurerm_container_app" "todos_api" {
   }
 
   ingress {
-    allow_insecure_connections = false
+    allow_insecure_connections = true
     target_port                = 8082
     external_enabled           = false
     traffic_weight {
@@ -249,17 +254,17 @@ resource "azurerm_container_app" "log_message_processor" {
 
       env {
         name  = "ZIPKIN_URL"
-        value = "https://${azurerm_container_app.zipkin.ingress[0].fqdn}"
+        value = "http://zipkin:9411/api/v2/spans"
       }
 
       env {
         name  = "REDIS_PORT"
-        value = "6380"
+        value = "6379"
       }
 
       env {
         name  = "REDIS_HOST"
-        value = "https://${azurerm_container_app.redis.ingress[0].fqdn}"
+        value = "redis"
       }
 
       env {
@@ -305,28 +310,28 @@ resource "azurerm_container_app" "frontend" {
 
       env {
         name  = "AUTH_API_ADDRESS"
-        value = "https://${azurerm_container_app.auth_api.ingress[0].fqdn}"
+        value = "http://auth-api:8000"
       }
 
       env {
         name  = "TODOS_API_ADDRESS"
-        value = "https://${azurerm_container_app.todos_api.ingress[0].fqdn}"
+        value = "http://todos-api:8082"
       }
 
       env {
         name  = "USERS_API_ADDRESS"
-        value = "https://${azurerm_container_app.users_api.ingress[0].fqdn}"
+        value = "http://users-api:8080" 
       }
 
       env {
         name  = "ZIPKIN_URL"
-        value = "https://${azurerm_container_app.zipkin.ingress[0].fqdn}"
+        value = "http://zipkin:9411"
       }
     }
   }
 
   ingress {
-    allow_insecure_connections = true
+    allow_insecure_connections = false
     target_port                = 80
     external_enabled           = true
     traffic_weight {
