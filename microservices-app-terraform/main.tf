@@ -299,40 +299,40 @@ resource "azurerm_container_app" "frontend" {
   template {
     container {
       name   = "frontend"
-      image  = "mag1305/frontend:latest"
+      image  = "mag1305/frontend2:latest"
       cpu    = 0.25
       memory = "0.5Gi"
 
       env {
         name  = "PORT"
-        value = "80"
+        value = "8080"
       }
 
       env {
         name  = "AUTH_API_ADDRESS"
-        value = "http://auth-api"
+        value = "https://${azurerm_container_app.auth-api.ingress[0].fqdn}"
       }
 
       env {
         name  = "TODOS_API_ADDRESS"
-        value = "http://todos-api"
+        value = "https://${azurerm_container_app.todos-api.ingress[0].fqdn}"
       }
 
       env {
         name  = "USERS_API_ADDRESS"
-        value = "http://users-api" 
+        value = "https://${azurerm_container_app.users-api.ingress[0].fqdn}" 
       }
 
       env {
         name  = "ZIPKIN_URL"
-        value = "http://zipkin/api/v2/spans"
+        value = "https://${azurerm_container_app.zipkin.ingress[0].fqdn}"
       }
     }
   }
 
   ingress {
     allow_insecure_connections = true
-    target_port                = 80
+    target_port                = 8080
     external_enabled           = true
     traffic_weight {
       latest_revision = true
