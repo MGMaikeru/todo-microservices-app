@@ -1,453 +1,230 @@
+# Configure the Azure Provider
 provider "azurerm" {
   features {}
   subscription_id = var.subscription_id
 }
 
-resource "azurerm_resource_group" "microservices_rg" {
+# Resource Group Module
+module "resource_group" {
+  source   = "./modules/resource_group"
   name     = var.resource_group_name
-  location = var.microservices_location
+  location = var.location
+  tags     = var.tags
 }
 
-resource "azurerm_log_analytics_workspace" "log_analytics" {
-  name                = var.microservices_log_analytics_name
-  location            = azurerm_resource_group.microservices_rg.location
-  resource_group_name = azurerm_resource_group.microservices_rg.name
-  sku                 = "PerGB2018"
-  retention_in_days   = 30
+# Container Registry Module
+module "container_registry" {
+  source              = "./modules/container_registry"
+  resource_group_name = module.resource_group.name
+  location            = module.resource_group.location
+  acr_name            = var.acr_name
+  sku                 = var.acr_sku
+  admin_enabled       = var.acr_admin_enabled
+  tags                = var.tags
+  depends_on          = [module.resource_group]
 }
 
-resource "azurerm_container_app_environment" "microservices_env" {
-  name                       = var.microservices_container_env_name
-  location                   = azurerm_resource_group.microservices_rg.location
-  resource_group_name        = azurerm_resource_group.microservices_rg.name
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.log_analytics.id
+# Container Apps Environment Module
+module "container_apps_environment" {
+  source              = "./modules/container_apps_environment"
+  resource_group_name = module.resource_group.name
+  location            = module.resource_group.location
+  name                = var.container_apps_environment_name
+  # subnet_id           = module.network.subnet_id
+  tags       = var.tags
+  depends_on = [module.resource_group]
 }
 
-resource "azurerm_container_app" "zipkin" {
-  name                         = "zipkin"
-  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
-  resource_group_name          = azurerm_resource_group.microservices_rg.name
-  revision_mode                = "Single"
-
-  template {
-    container {
-      name   = "zipkin"
-      image  = "openzipkin/zipkin:2.23"
-      cpu    = 0.25
-      memory = "0.5Gi"
-    }
-  }
-
-  ingress {
-    allow_insecure_connections = true
-    target_port                = 9411
-    external_enabled           = true
-    traffic_weight {
-      latest_revision = true
-      percentage      = 100
-    }
-  }
+# Container Apps Modules
+module "zipkin" {
+  source                     = "./modules/container_apps"
+  resource_group_name        = module.resource_group.name
+  location                   = module.resource_group.location
+  container_app_name         = "zipkin"
+  container_apps_environment = module.container_apps_environment.name
+  image                      = "openzipkin/zipkin:latest"
+  registry_server            = module.container_registry.login_server
+  registry_username          = module.container_registry.admin_username
+  registry_password          = module.container_registry.admin_password
+  cpu                        = 0.5
+  memory                     = "1Gi"
+  min_replicas               = 1
+  max_replicas               = 3
+  ingress_external           = true
+  ingress_target_port        = 9411
+  environment_variables      = {}
+  secrets                    = {}
+  tags                       = var.tags
+  depends_on                 = [module.container_apps_environment]
 }
 
-resource "azurerm_container_app" "redis" {
-  name                         = "redis"
-  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
-  resource_group_name          = azurerm_resource_group.microservices_rg.name
-  revision_mode                = "Single"
-
-  template {
-    container {
-      name   = "redis"
-      image  = "redis:alpine"
-      cpu    = 0.25
-      memory = "0.5Gi"
-    }
-  }
-
-  ingress {
-    allow_insecure_connections = true
-    target_port                = 6379
-    external_enabled           = true
-    traffic_weight {
-      latest_revision = true
-      percentage      = 100
-    }
-  }
-
-  depends_on = [azurerm_container_app.zipkin]
+module "redis" {
+  source                     = "./modules/container_apps"
+  resource_group_name        = module.resource_group.name
+  location                   = module.resource_group.location
+  container_app_name         = "redis"
+  container_apps_environment = module.container_apps_environment.name
+  image                      = "redis:7.0-alpine"
+  registry_server            = module.container_registry.login_server
+  registry_username          = module.container_registry.admin_username
+  registry_password          = module.container_registry.admin_password
+  cpu                        = 0.5
+  memory                     = "1Gi"
+  min_replicas               = 1
+  max_replicas               = 3
+  ingress_external           = false
+  ingress_target_port        = 6379
+  environment_variables      = {}
+  secrets                    = {}
+  tags                       = var.tags
+  depends_on                 = [module.container_apps_environment]
 }
 
-resource "azurerm_container_app" "users-api" {
-  name                         = "users-api"
-  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
-  resource_group_name          = azurerm_resource_group.microservices_rg.name
-  revision_mode                = "Single"
-
-  template {
-    container {
-      name   = "users-api"
-      image  = "mag1305/users-api:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      env {
-        name  = "spring.zipkin.baseUrl"
-        value = "http://zipkin"
-      }
-
-      env {
-        name = "JWT_SECRET"
-        value = "PRTF"
-      }
-
-      env {
-        name = "SERVER_PORT"
-        value = "8080"
-      }
-    }
+module "users_api" {
+  source                     = "./modules/container_apps"
+  resource_group_name        = module.resource_group.name
+  location                   = module.resource_group.location
+  container_app_name         = "users-api"
+  container_apps_environment = module.container_apps_environment.name
+  image                      = "mag1305/users-api:latest"
+  registry_server            = module.container_registry.login_server
+  registry_username          = module.container_registry.admin_username
+  registry_password          = module.container_registry.admin_password
+  cpu                        = 0.5
+  memory                     = "1Gi"
+  min_replicas               = 1
+  max_replicas               = 3
+  ingress_external           = false
+  ingress_target_port        = 8083
+  environment_variables = {
+    "JWT_SECRET"             = "secretref:jwt-secret"
+    "SERVER_PORT"            = "8083"
+    "SPRING_PROFILES_ACTIVE" = "default"
+    "ZIPKIN_URL"             = "http://zipkin/api/v2/spans"
   }
 
-  ingress {
-    allow_insecure_connections = true
-    target_port                = 8080
-    external_enabled           = true
-    traffic_weight {
-      latest_revision = true
-      percentage      = 100
-    }
+  secrets = {
+    "jwt-secret" = var.jwt_secret
   }
-
-  depends_on = [
-    azurerm_container_app.zipkin,
-  ]
+  tags       = var.tags
+  depends_on = [module.container_apps_environment, module.redis, module.zipkin]
 }
 
-resource "azurerm_container_app" "auth-api" {
-  name                         = "auth-api"
-  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
-  resource_group_name          = azurerm_resource_group.microservices_rg.name
-  revision_mode                = "Single"
-
-  template {
-    container {
-      name   = "auth-api"
-      image  = "mag1305/auth-api:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      env {
-        name  = "ZIPKIN_URL"
-        value = "http://zipkin/api/v2/spans"
-      }
-
-      env {
-        name  = "AUTH_API_PORT"
-        value = "8000"
-      }
-
-      env {
-        name = "JWT_SECRET"
-        value = "PRTF"
-      }
-      
-      env {
-        name  = "USERS_API_ADDRESS"
-        value = "http://users-api"
-      }
-
-      env {
-        name  = "CORS_ALLOWED_ORIGINS"
-        value = "*"
-      }
-    }
+module "auth_api" {
+  source                     = "./modules/container_apps"
+  resource_group_name        = module.resource_group.name
+  location                   = module.resource_group.location
+  container_app_name         = "auth-api"
+  container_apps_environment = module.container_apps_environment.name
+  image                      = "mag1305/auth-api:latest"
+  registry_server            = module.container_registry.login_server
+  registry_username          = module.container_registry.admin_username
+  registry_password          = module.container_registry.admin_password
+  cpu                        = 0.5
+  memory                     = "1Gi"
+  min_replicas               = 1
+  max_replicas               = 3
+  ingress_external           = false
+  ingress_target_port        = 8000
+  environment_variables = {
+    "JWT_SECRET"        = "secretref:jwt-secret"
+    "AUTH_API_PORT"     = "8000"
+    "USERS_API_ADDRESS" = "http://users-api"
+    "ZIPKIN_URL"        = "http://zipkin/api/v2/spans"
   }
-
-  ingress {
-    allow_insecure_connections = true
-    target_port                = 8000
-    external_enabled           = true
-    traffic_weight {
-      latest_revision = true
-      percentage      = 100
-    }
+  secrets = {
+    "jwt-secret" = var.jwt_secret
   }
-
-  depends_on = [
-    azurerm_container_app.zipkin,
-    azurerm_container_app.users-api,
-  ]
+  tags       = var.tags
+  depends_on = [module.container_apps_environment, module.users_api]
 }
 
-resource "azurerm_container_app" "todos-api" {
-  name                         = "todos-api"
-  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
-  resource_group_name          = azurerm_resource_group.microservices_rg.name
-  revision_mode                = "Single"
-
-  template {
-    container {
-      name   = "todos-api"
-      image  = "mag1305/todos-api:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      env {
-        name  = "ZIPKIN_URL"
-        value = "http://zipkin/api/v2/spans"
-      }
-
-      env {
-        name  = "TODO_API_PORT"
-        value = "8082"
-      }
-
-      env {
-        name = "JWT_SECRET"
-        value = "PRTF"
-      }
-
-      env {
-        name  = "REDIS_PORT"
-        value = "6379"
-      }
-
-      env {
-        name  = "REDIS_HOST"
-        value = "redis"
-      }
-
-      env {
-        name  = "REDIS_CHANNEL"
-        value = "log_channel"
-      }
-    }
+module "todos_api" {
+  source                     = "./modules/container_apps"
+  resource_group_name        = module.resource_group.name
+  location                   = module.resource_group.location
+  container_app_name         = "todos-api"
+  container_apps_environment = module.container_apps_environment.name
+  image                      = "mag1305/todos-api:latest"
+  registry_server            = module.container_registry.login_server
+  registry_username          = module.container_registry.admin_username
+  registry_password          = module.container_registry.admin_password
+  cpu                        = 0.5
+  memory                     = "1Gi"
+  min_replicas               = 1
+  max_replicas               = 3
+  ingress_external           = false
+  ingress_target_port        = 8082
+  environment_variables = {
+    "TODO_API_PORT" = "8082"
+    "REDIS_HOST"    = "redis"
+    "REDIS_PORT"    = "6379"
+    "REDIS_CHANNEL" = "log_channel"
+    "USERS_API_URL" = "http://users-api"
+    "ZIPKIN_URL"    = "http://zipkin/api/v2/spans"
+    "JWT_SECRET"    = "secretref:jwt-secret"
   }
-
-  ingress {
-    allow_insecure_connections = true
-    target_port                = 8082
-    external_enabled           = true
-    traffic_weight {
-      latest_revision = true
-      percentage      = 100
-    }
+  secrets = {
+    "jwt-secret" = var.jwt_secret
   }
-
-  depends_on = [
-    azurerm_container_app.zipkin,
-    azurerm_container_app.redis,
-  ]
+  tags       = var.tags
+  depends_on = [module.container_apps_environment, module.redis, module.users_api]
 }
 
-resource "azurerm_container_app" "log_message_processor" {
-  name                         = "log-message-processor"
-  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
-  resource_group_name          = azurerm_resource_group.microservices_rg.name
-  revision_mode                = "Single"
-
-  template {
-    container {
-      name   = "log-message-processor"
-      image  = "mag1305/log-message-processor:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      env {
-        name  = "ZIPKIN_URL"
-        value = "http://zipkin/api/v2/spans"
-      }
-
-      env {
-        name  = "REDIS_PORT"
-        value = "6379"
-      }
-
-      env {
-        name  = "REDIS_HOST"
-        value = "redis"
-      }
-
-      env {
-        name  = "REDIS_CHANNEL"
-        value = "log_channel"
-      }
-    }
+module "log_processor" {
+  source                     = "./modules/container_apps"
+  resource_group_name        = module.resource_group.name
+  location                   = module.resource_group.location
+  container_app_name         = "log-message-processor"
+  container_apps_environment = module.container_apps_environment.name
+  image                      = "mag1305/log-message-processor:latest"
+  registry_server            = module.container_registry.login_server
+  registry_username          = module.container_registry.admin_username
+  registry_password          = module.container_registry.admin_password
+  cpu                        = 0.5
+  memory                     = "1Gi"
+  min_replicas               = 1
+  max_replicas               = 3
+  ingress_external           = false
+  ingress_target_port        = 8081
+  environment_variables = {
+    "PORT"          = "8081"
+    "REDIS_HOST"    = "redis"
+    "REDIS_PORT"    = "6379"
+    "REDIS_CHANNEL" = "log_channel"
+    "ZIPKIN_URL"    = "http://zipkin/api/v2/spans"
   }
-
-  ingress {
-    allow_insecure_connections = false
-    target_port                = 6380
-    external_enabled           = false
-    traffic_weight {
-      latest_revision = true
-      percentage      = 100
-    }
-  }
-
-  depends_on = [
-    azurerm_container_app.zipkin,
-    azurerm_container_app.redis,
-  ]
+  secrets    = {}
+  tags       = var.tags
+  depends_on = [module.container_apps_environment, module.redis]
 }
 
-resource "azurerm_container_app" "frontend" {
-  name                         = "frontend"
-  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
-  resource_group_name          = azurerm_resource_group.microservices_rg.name
-  revision_mode                = "Single"
-
-  template {
-    container {
-      name   = "frontend"
-      image  = "mag1305/frontend2:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      env {
-        name  = "PORT"
-        value = "8080"
-      }
-
-      env {
-        name  = "AUTH_API_ADDRESS"
-        value = "https://${azurerm_container_app.auth-api.ingress[0].fqdn}"
-      }
-
-      env {
-        name  = "TODOS_API_ADDRESS"
-        value = "https://${azurerm_container_app.todos-api.ingress[0].fqdn}"
-      }
-
-      env {
-        name  = "USERS_API_ADDRESS"
-        value = "https://${azurerm_container_app.users-api.ingress[0].fqdn}" 
-      }
-
-      env {
-        name  = "ZIPKIN_URL"
-        value = "https://${azurerm_container_app.zipkin.ingress[0].fqdn}"
-      }
-    }
+module "frontend" {
+  source                     = "./modules/container_apps"
+  resource_group_name        = module.resource_group.name
+  location                   = module.resource_group.location
+  container_app_name         = "frontend"
+  container_apps_environment = module.container_apps_environment.name
+  image                      = "mag1305/frontend:latest"
+  registry_server            = module.container_registry.login_server
+  registry_username          = module.container_registry.admin_username
+  registry_password          = module.container_registry.admin_password
+  cpu                        = 0.5
+  memory                     = "1Gi"
+  min_replicas               = 1
+  max_replicas               = 3
+  ingress_external           = true
+  ingress_target_port        = 8080
+  environment_variables = {
+    "PORT"              = "8080"
+    "AUTH_API_ADDRESS"  = "http://auth-api"
+    "TODOS_API_ADDRESS" = "http://todos-api"
+    "ZIPKIN_URL"        = "http://zipkin/api/v2/spans"
+    "JWT_SECRET"        = "secretref:jwt-secret"
   }
-
-  ingress {
-    allow_insecure_connections = true
-    target_port                = 8080
-    external_enabled           = true
-    traffic_weight {
-      latest_revision = true
-      percentage      = 100
-    }
+  secrets = {
+    "jwt-secret" = var.jwt_secret
   }
-
-  depends_on = [
-    azurerm_container_app.zipkin,
-    azurerm_container_app.auth-api,
-    azurerm_container_app.todos-api,
-    azurerm_container_app.users-api,
-  ]
+  tags       = var.tags
+  depends_on = [module.container_apps_environment, module.auth_api, module.todos_api]
 }
-
-# locals {
-#   services = {
-#     frontend              = { port = 80, image = "mag1305/frontend:latest" }
-#     users-api             = { port = 8080, image = "mag1305/users-api:latest" }
-#     todos-api             = { port = 8082, image = "mag1305/todos-api:latest" }
-#     log-message-processor = { port = 6379, image = "mag1305/log-message-processor:latest" }
-#     auth-api              = { port = 8000, image = "mag1305/auth-api:latest" }
-#     zipkin                = { port = 9411, image = "openzipkin/zipkin:latest" }
-#     redis                 = { port = 6380, image = "redis:alpine" }
-#   }
-# }
-
-# resource "azurerm_container_app" "services" {
-#   for_each                     = local.services
-#   name                         = each.key
-#   container_app_environment_id = azurerm_container_app_environment.microservices_env.id
-#   resource_group_name          = azurerm_resource_group.microservices_rg.name
-#   revision_mode                = "Single"
-
-#   template {
-#     container {
-#       name   = each.key
-#       image  = each.value.image
-#       cpu    = 0.25
-#       memory = "0.5Gi"
-
-#       env {
-#         name  = "AUTH_API_PORT"
-#         value = "8000"
-#       }
-
-#       env {
-#         name  = "USERS_API_ADDRESS"
-#         value = "https://${azurerm_container_app.services["users-api"].ingress[0].fqdn}"
-#       }
-
-#       env {
-#         name = "JWT_SECRET"
-#         value = "PRTF"
-#       }
-
-#       env {
-#         name  = "ZIPKIN_URL"
-#         value = "https://${azurerm_container_app.services["zipkin"].ingress[0].fqdn}"
-#       }
-
-#       env {
-#         name  = "SERVER_PORT"
-#         value = "8080"
-#       }
-
-#       env {
-#         name  = "spring.zipkin.baseUrl"
-#         value = "https://${azurerm_container_app.services["zipkin"].ingress[0].fqdn}"
-#       }
-
-#       env {
-#         name  = "TODO_API_PORT"
-#         value = "8082"
-#       }
-
-#       env {
-#         name  = "REDIS_PORT"
-#         value = "6380"
-#       }
-
-#       env {
-#         name  = "REDIS_HOST"
-#         value = "https://${azurerm_container_app.services["redis"].ingress[0].fqdn}"
-#       }
-
-#       env {
-#         name  = "REDIS_CHANNEL"
-#         value = "log_channel"
-#       }
-
-#       env {
-#         name  = "PORT"
-#         value = "80"
-#       }
-
-#       env {
-#         name  = "AUTH_API_ADDRESS"
-#         value = "https://${azurerm_container_app.services["auth-api"].ingress[0].fqdn}"
-#       }
-
-#       env {
-#         name  = "TODOS_API_ADDRESS"
-#         value = "https://${azurerm_container_app.services["todos-api"].ingress[0].fqdn}"
-#       }
-#     }
-#   }
-
-#   ingress {
-#     allow_insecure_connections = false
-#     target_port               = each.value.port
-#     external_enabled          = contains(["frontend", "zipkin"], each.key)
-#     traffic_weight {
-#       latest_revision = true
-#       percentage     = 100
-#     }
-#   }
-# }
